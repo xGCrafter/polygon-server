@@ -1,0 +1,9 @@
+[build]
+  command = "pip install -r requirements.txt"
+  functions = "functions"
+
+[[redirects]]
+  from = "/check"
+  to = "/.netlify/functions/check"
+  status = 200
+  force = true
