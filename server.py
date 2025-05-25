@@ -8,7 +8,6 @@ import requests
 from pathlib import Path
 from flask import Flask, request, jsonify
 from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from playwright.async_api import async_playwright
 from colorama import Fore, init
 from threading import Lock
@@ -398,7 +397,6 @@ async def check_accounts():
         use_captcha_solver = data.get("use_captcha_solver", False)
         nopecha_api_key = data.get("nopecha_api_key", "")
         max_tasks = data.get("max_tasks", 1)
-        headless_mode = data.get("headless_mode", True)
 
         stats = {
             "hits": 0, "twofa": 0, "bad": 0, "totalrbx": 0,
@@ -427,7 +425,7 @@ async def check_accounts():
                 "--disable-gpu",
             ]
             browser_kwargs = {
-                "headless": headless_mode,
+                "headless": True,
                 "args": browser_args,
             }
             if use_captcha_solver and nopecha_api_key:
