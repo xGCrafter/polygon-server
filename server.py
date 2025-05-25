@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 from colorama import Fore, init
 from threading import Lock
 import sys
-
+import waitress
 console = Console()
 
 CURRENT_VERSION = "1.0.0"
