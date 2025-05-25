@@ -1,5 +1,6 @@
-flask
-playwright
-aiohttp
-requests
-gunicorn
+Flask==2.3.3
+requests==2.32.3
+aiohttp==3.9.5
+playwright==1.44.0
+rich==13.7.1
+colorama==0.4.6
